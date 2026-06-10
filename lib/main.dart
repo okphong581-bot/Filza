@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/file_manager_screen.dart';
+import 'screens/aura_shell.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,18 +19,18 @@ class HaFileApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Ha Floating Demo',
+      title: 'Aethera Quantum Universe',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF7C3AED),
+          seedColor: const Color(0xFF8B5CF6),
           brightness: Brightness.dark,
-          surface: const Color(0xFF0D0D1A),
+          surface: const Color(0xFF06060F),
         ),
-        scaffoldBackgroundColor: const Color(0xFF0D0D1A),
+        scaffoldBackgroundColor: const Color(0xFF06060F),
         useMaterial3: true,
       ),
-      home: const FileManagerScreen(),
+      home: const AuraShell(),
     );
   }
 }
