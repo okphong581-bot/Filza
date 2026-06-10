@@ -12,9 +12,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────
+      # ── 1. Checkout source ───────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: repo
 
       # ── 2. Setup Flutter ─────────────────────────────────────
       - name: Setup Flutter
@@ -24,68 +26,81 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      # ── 3. Create fresh Flutter iOS project ─────────────────
-      # Vì repo chỉ chứa lib/ và pubspec.yaml, cần scaffold iOS
-      - name: Scaffold full Flutter project
+      # ── 3. Scaffold fresh Flutter iOS project ────────────────
+      # Tạo project chuẩn → có đủ ios/Podfile, Runner.xcodeproj...
+      - name: Create fresh Flutter project
         run: |
-          # Tạo project flutter mới tạm thời
-          flutter create --org com.ha.filza --project-name ha_floating_demo /tmp/flutter_scaffold
-          
-          # Copy Xcode project structure từ scaffold vào repo
-          cp -r /tmp/flutter_scaffold/ios ${{ github.workspace }}/ios_flutter
-          
-          # Xóa ios cũ (chỉ có Info.plist tùy chỉnh), giữ Info.plist
-          cp ${{ github.workspace }}/ios/Runner/Info.plist /tmp/custom_info.plist
-          rm -rf ${{ github.workspace }}/ios
-          mv ${{ github.workspace }}/ios_flutter ${{ github.workspace }}/ios
-          
-          # Khôi phục Info.plist tùy chỉnh
-          cp /tmp/custom_info.plist ${{ github.workspace }}/ios/Runner/Info.plist
+          flutter create \
+            --org com.ha.filza \
+            --project-name ha_floating_demo \
+            --platforms ios \
+            $GITHUB_WORKSPACE/app
 
-      # ── 4. Get Flutter packages ─────────────────────────────
+      # ── 4. Overlay source code từ repo ───────────────────────
+      - name: Copy source files into project
+        run: |
+          # Xóa lib mặc định, thay bằng lib của mình
+          rm -rf $GITHUB_WORKSPACE/app/lib
+          cp -r $GITHUB_WORKSPACE/repo/lib $GITHUB_WORKSPACE/app/lib
+
+          # Thay pubspec.yaml
+          cp $GITHUB_WORKSPACE/repo/pubspec.yaml $GITHUB_WORKSPACE/app/pubspec.yaml
+
+          # Thay Info.plist (quyền file, UIFileSharingEnabled...)
+          cp $GITHUB_WORKSPACE/repo/ios/Runner/Info.plist \
+             $GITHUB_WORKSPACE/app/ios/Runner/Info.plist
+
+          echo "=== Cấu trúc project ==="
+          ls -la $GITHUB_WORKSPACE/app/
+          ls -la $GITHUB_WORKSPACE/app/ios/
+
+      # ── 5. Flutter pub get ───────────────────────────────────
       - name: Flutter pub get
         run: flutter pub get
-        working-directory: ${{ github.workspace }}
+        working-directory: $GITHUB_WORKSPACE/app
 
-      # ── 5. Setup CocoaPods ──────────────────────────────────
-      - name: Setup CocoaPods
+      # ── 6. Kiểm tra Podfile ──────────────────────────────────
+      - name: Verify Podfile exists
         run: |
-          sudo gem install cocoapods --no-document
-          pod --version
+          ls -la $GITHUB_WORKSPACE/app/ios/
+          cat $GITHUB_WORKSPACE/app/ios/Podfile
 
+      # ── 7. Pod install ───────────────────────────────────────
       - name: Pod install
         run: pod install --repo-update
-        working-directory: ${{ github.workspace }}/ios
+        working-directory: $GITHUB_WORKSPACE/app/ios
 
-      # ── 6. Build iOS ────────────────────────────────────────
-      - name: Build iOS (no codesign)
+      # ── 8. Build iOS release (no codesign) ──────────────────
+      - name: Build iOS
         run: |
           flutter build ios \
             --release \
             --no-codesign
-        working-directory: ${{ github.workspace }}
+        working-directory: $GITHUB_WORKSPACE/app
 
-      # ── 7. Package → IPA ────────────────────────────────────
+      # ── 9. Package → IPA ────────────────────────────────────
       - name: Package IPA
         run: |
           mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/Runner.app
-          zip -r HaFloatingDemo.ipa Payload/
-          echo "IPA size: $(du -sh HaFloatingDemo.ipa | cut -f1)"
-        working-directory: ${{ github.workspace }}
+          cp -r $GITHUB_WORKSPACE/app/build/ios/iphoneos/Runner.app Payload/Runner.app
 
-      # ── 8. Upload artifact ───────────────────────────────────
-      - name: Upload IPA
+          # Xóa icon để giảm dung lượng (không cần logo app)
+          rm -rf Payload/Runner.app/AppIcon*.png
+          rm -rf Payload/Runner.app/Assets.car 2>/dev/null || true
+
+          zip -r HaFloatingDemo.ipa Payload/
+          echo "✅ IPA size: $(du -sh HaFloatingDemo.ipa | cut -f1)"
+        working-directory: $GITHUB_WORKSPACE
+
+      # ── 10. Upload artifact ───────────────────────────────────
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: HaFloatingDemo-IPA
-          path: HaFloatingDemo.ipa
+          path: ${{ github.workspace }}/HaFloatingDemo.ipa
           retention-days: 30
 
-      # ── 9. Create GitHub Release ─────────────────────────────
+      # ── 11. Create GitHub Release ─────────────────────────────
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -96,22 +111,24 @@ jobs:
 
             **Build:** #${{ github.run_number }}
             **Commit:** `${{ github.sha }}`
+            **Date:** ${{ github.event.head_commit.timestamp }}
 
             ### Tính năng
-            - 📂 Duyệt thư mục theo đường dẫn tùy chỉnh
-            - ⬆️ Tiêm file vào thư mục bất kỳ
-            - 📁 Tạo / Xóa / Đổi tên file
-            - 🔖 Quick Access các paths phổ biến
+            - 📂 Duyệt & nhập đường dẫn tùy chỉnh
+            - ⬆️ Tiêm file vào bất kỳ thư mục nào
+            - 📁 Tạo / Xóa / Đổi tên file & folder
+            - 🔖 Quick Access: `/var/mobile/Documents`, `/tmp`...
+            - 🔍 Tìm kiếm file trong thư mục
 
             ### Cài đặt IPA
-            | Công cụ | Mô tả |
+            | Công cụ | Link |
             |---|---|
-            | **AltStore** | [altstore.io](https://altstore.io) — miễn phí |
+            | **AltStore** (miễn phí) | [altstore.io](https://altstore.io) |
             | **Sideloadly** | [sideloadly.io](https://sideloadly.io) |
-            | **TrollStore** | Jailbreak, cài trực tiếp |
+            | **TrollStore** (jailbreak) | Cài trực tiếp |
 
-            > ⚠️ IPA chưa ký (no-codesign) — cần AltStore/Sideloadly/TrollStore để cài.
-          files: HaFloatingDemo.ipa
+            > ⚠️ IPA không codesign — cần AltStore / Sideloadly / TrollStore để cài.
+          files: ${{ github.workspace }}/HaFloatingDemo.ipa
           draft: false
           prerelease: false
         env:
