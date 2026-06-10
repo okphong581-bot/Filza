@@ -248,7 +248,7 @@ class _QuantumSpaceScreenState extends State<QuantumSpaceScreen>
 
   void _onNodeDoubleTap(CelestialNode node) {
     if (node.item.isDirectory) {
-      HapticFeedback.doubleCheck();
+      HapticFeedback.mediumImpact();
       _history.add(_currentPath);
       _loadDirectory(node.item.path);
     }
