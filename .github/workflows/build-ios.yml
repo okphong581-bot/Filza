@@ -1,0 +1,97 @@
+name: 🍎 Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: false
+        default: 'latest'
+
+jobs:
+  build-ios:
+    name: Build IPA (no-codesign)
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Setup Flutter ─────────────────────────────────────
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter version info
+        run: flutter --version
+
+      # ── 3. Get dependencies ──────────────────────────────────
+      - name: Get Flutter packages
+        run: flutter pub get
+
+      # ── 4. Install CocoaPods ─────────────────────────────────
+      - name: Install CocoaPods
+        run: |
+          gem install cocoapods --no-document
+          cd ios && pod install --repo-update
+        working-directory: ${{ github.workspace }}
+
+      # ── 5. Build iOS (no codesign) ───────────────────────────
+      - name: Build iOS release (no codesign)
+        run: |
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --dart-define=FLUTTER_APP_NAME="Ha Floating Demo"
+
+      # ── 6. Package .app → .ipa ───────────────────────────────
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/Runner.app
+          zip -r HaFloatingDemo.ipa Payload/
+          echo "✅ IPA created: $(du -sh HaFloatingDemo.ipa | cut -f1)"
+          ls -lh HaFloatingDemo.ipa
+
+      # ── 7. Upload artifact ───────────────────────────────────
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HaFloatingDemo-IPA
+          path: HaFloatingDemo.ipa
+          retention-days: 30
+
+      # ── 8. Create GitHub Release ─────────────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push'
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Ha Floating Demo — Build #${{ github.run_number }}"
+          body: |
+            ## 📦 Ha File Manager IPA
+
+            **Build:** #${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            **Date:** ${{ github.event.head_commit.timestamp }}
+
+            ### Cài đặt
+            | Phương pháp | Link |
+            |---|---|
+            | **AltStore** | [altstore.io](https://altstore.io) |
+            | **Sideloadly** | [sideloadly.io](https://sideloadly.io) |
+            | **TrollStore** (jailbreak) | Cài trực tiếp |
+
+            > ⚠️ IPA chưa được ký (no-codesign). Dùng AltStore hoặc Sideloadly để cài.
+          files: HaFloatingDemo.ipa
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
