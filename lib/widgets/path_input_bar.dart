@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 /// Thanh nhập đường dẫn + breadcrumb navigation
 class PathInputBar extends StatefulWidget {
@@ -46,7 +45,11 @@ class _PathInputBarState extends State<PathInputBar> {
     setState(() => _isEditing = true);
     _ctrl.text = widget.currentPath;
     _focusNode.requestFocus();
-    _ctrl.selectAll();
+    // Chọn toàn bộ text để người dùng dễ sửa
+    _ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _ctrl.text.length,
+    );
   }
 
   void _submitPath() {
